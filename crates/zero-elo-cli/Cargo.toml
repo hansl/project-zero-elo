@@ -1,0 +1,20 @@
+[package]
+name = "zero-elo-cli"
+description = "Command line interface for the zero-elo chess engine."
+keywords = ["chess", "uci", "engine"]
+categories = ["games", "command-line-utilities"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "zero-elo"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6.6", features = ["derive"] }
+zero-elo = { path = "../zero-elo", version = "0.1.0" }

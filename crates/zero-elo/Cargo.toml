@@ -1,0 +1,18 @@
+[package]
+name = "zero-elo"
+description = "A UCI chess engine that plays the best move for the worst long-term outcome."
+keywords = ["chess", "uci", "engine"]
+categories = ["games"]
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+shakmaty = "0.29"
+
+[lints.rust]
+missing_docs = "warn"
