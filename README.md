@@ -63,6 +63,19 @@ cargo install zero-elo-cli
 # the binary is named zero-elo
 ```
 
+Or take a prebuilt binary from the
+[latest release](https://github.com/hansl/project-zero-elo/releases/latest) —
+macOS (Apple Silicon and Intel), Linux (x86-64 and ARM64) and Windows (x86-64).
+Unpack it and put `zero-elo` somewhere on your `PATH`. The Linux builds are
+statically linked against musl and do not care which distribution they land on,
+and every archive is covered by the `SHA256SUMS` file beside it.
+
+The macOS binaries are not signed, so Gatekeeper will block the first run:
+
+```sh
+xattr -d com.apple.quarantine ./zero-elo
+```
+
 Or from a checkout:
 
 ```sh

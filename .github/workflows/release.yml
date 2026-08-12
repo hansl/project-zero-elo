@@ -1,0 +1,175 @@
+name: Release
+
+# Cutting a release is a tag push:
+#
+#     git tag -a v0.1.0 -m "v0.1.0" && git push origin v0.1.0
+#
+# Everything below then builds zero-elo for five targets and attaches the
+# archives, plus a SHA256SUMS file, to a GitHub release for that tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build a release for"
+        required: true
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap gate: a tag that disagrees with the manifest would publish archives
+  # whose names do not match what is inside them. Fail before spending five
+  # builds on it.
+  check:
+    name: Check tag against manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - shell: bash
+        run: |
+          manifest=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name == "zero-elo-cli") | .version')
+          if [ "${TAG#v}" != "$manifest" ]; then
+            echo "::error::tag $TAG does not match zero-elo-cli $manifest"
+            exit 1
+          fi
+          echo "$TAG matches zero-elo-cli $manifest"
+
+  build:
+    name: ${{ matrix.target }}
+    needs: check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    env:
+      # Release binaries do not need their debug symbols; this halves the
+      # download without touching the profile in Cargo.toml.
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Install the musl toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add ${{ matrix.target }}
+
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked --target ${{ matrix.target }} -p zero-elo-cli
+
+      - name: Package
+        shell: bash
+        run: |
+          name="zero-elo-${TAG#v}-${{ matrix.target }}"
+          mkdir "$name"
+          cp README.md LICENSE "$name/"
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp "target/${{ matrix.target }}/release/zero-elo.exe" "$name/"
+            7z a "$name.zip" "$name" > /dev/null
+            echo "ASSET=$name.zip" >> "$GITHUB_ENV"
+          else
+            cp "target/${{ matrix.target }}/release/zero-elo" "$name/"
+            tar czf "$name.tar.gz" "$name"
+            echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      # Only worth doing where the runner can execute what it just built, which
+      # rules out the Intel macOS archive (built on Apple Silicon) — Rosetta is
+      # not installed on the runners.
+      - name: Smoke-test the binary
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/zero-elo"
+          [ "$RUNNER_OS" = Windows ] && bin="$bin.exe"
+          printf 'uci\nquit\n' | "$bin" | grep -qE '^uciok\r?$'
+          echo "the engine answered uciok"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+
+  release:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksum
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      # gh cannot prepend to its own generated notes, so ask the API for them
+      # and stitch the install section on the front.
+      - name: Write the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$TAG" --jq .body > generated.md
+          cat > notes.md <<'HEADER'
+          ### Install
+
+          ```sh
+          cargo install zero-elo-cli
+          ```
+
+          Or download the archive for your platform below, unpack it, and put
+          the `zero-elo` binary somewhere on your `PATH`. The Linux builds are
+          statically linked against musl, so they do not care which distribution
+          they land on. `SHA256SUMS` covers every archive.
+
+          macOS binaries are unsigned. Gatekeeper will refuse the first run —
+          clear it with `xattr -d com.apple.quarantine ./zero-elo`.
+
+          ---
+
+          HEADER
+          cat generated.md >> notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            --verify-tag
