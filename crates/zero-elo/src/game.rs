@@ -46,6 +46,11 @@ impl Game {
     }
 
     /// Parse a position from FEN and start a game there.
+    ///
+    /// # Errors
+    /// [`SetupError::Fen`] if the text is not valid FEN, and
+    /// [`SetupError::Illegal`] if it parses cleanly but does not describe a
+    /// position chess allows — the side not to move already in check, say.
     pub fn from_fen(fen: &str) -> Result<Game, SetupError> {
         let position: Chess = fen
             .parse::<Fen>()?
@@ -65,6 +70,10 @@ impl Game {
     }
 
     /// The current position's hash.
+    ///
+    /// # Panics
+    /// Never, in practice. The history is seeded with the position the game
+    /// started from and only ever grows, so there is always a last key.
     pub fn key(&self) -> u64 {
         *self.keys.last().expect("a game always has a position")
     }
@@ -86,6 +95,11 @@ impl Game {
 
     /// Play a move written in the long algebraic notation UCI uses, like
     /// `e2e4` or `e7e8q`.
+    ///
+    /// # Errors
+    /// [`SetupError::UnknownMove`] if the text is not long algebraic notation
+    /// at all, and [`SetupError::IllegalMove`] if it reads as a move but is not
+    /// legal in the current position. The game is left untouched either way.
     pub fn play_uci(&mut self, text: &str) -> Result<Move, SetupError> {
         let uci: UciMove = text.parse().map_err(|_| SetupError::UnknownMove)?;
         let m = uci.to_move(&self.position)?;

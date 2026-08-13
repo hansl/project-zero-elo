@@ -84,6 +84,10 @@ impl Transcript {
     }
 
     /// Record to a file, replacing anything already there.
+    ///
+    /// # Errors
+    /// Whatever opening the file reports — most often a missing parent
+    /// directory, or no permission to write where it points.
     pub fn to_file(path: &Path) -> io::Result<Transcript> {
         Ok(Transcript::to_writer(Box::new(File::create(path)?)))
     }
@@ -107,6 +111,11 @@ impl Transcript {
 
 /// Read UCI commands from `input` and write replies to `output` until the
 /// client quits or the input ends.
+///
+/// # Errors
+/// The first error from reading a line of `input`. Writing is best-effort: a
+/// reply that cannot be delivered is dropped rather than reported, so a front
+/// end that closes the pipe ends the session instead of failing it.
 pub fn run<R, W>(input: R, output: W) -> io::Result<()>
 where
     R: BufRead,
@@ -116,6 +125,10 @@ where
 }
 
 /// Like [`run_with`], but also writing the whole conversation to `transcript`.
+///
+/// # Errors
+/// As [`run`]: the first error from reading a line of `input`. Failing to
+/// write the transcript is not an error and does not interrupt the session.
 pub fn run_logged<R, W>(
     input: R,
     output: W,
@@ -142,6 +155,9 @@ where
 /// A client can still change anything with `setoption`; this only decides what
 /// the session starts with. It exists for front ends that cannot send options
 /// of their own, which is most of the simpler ones.
+///
+/// # Errors
+/// As [`run`]: the first error from reading a line of `input`.
 pub fn run_with<R, W>(input: R, output: W, options: crate::Options) -> io::Result<()>
 where
     R: BufRead,
