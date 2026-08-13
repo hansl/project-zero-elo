@@ -109,6 +109,39 @@ publish-dry:
 publish: check
     cargo publish --workspace
 
+# The version is written down in three places and only two of them are checked
+# by anything: cargo refuses to build if the CLI's dependency on the library
+# falls behind, but a stale html_root_url just quietly points the docs at the
+# previous release. This sets all three and leaves the result staged for review.
+[doc('Set the version everywhere, e.g. `just bump 0.2.0`')]
+[group('dist')]
+bump version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! [[ "{{ version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+      echo "error: '{{ version }}' is not a full version -- cargo wants major.minor.patch" >&2
+      exit 1
+    fi
+    old=$(cargo metadata --format-version 1 --no-deps \
+      | jq -r '.packages[] | select(.name == "zero-elo-cli") | .version')
+    if [ "$old" = "{{ version }}" ]; then
+      echo "already at {{ version }}"
+      exit 0
+    fi
+    # the version both crates inherit
+    sed -i.bak -E 's|^version = "[^"]*"|version = "{{ version }}"|' Cargo.toml
+    # the CLI's dependency on the library, which does not inherit it
+    sed -i.bak -E 's|(zero-elo = \{ path = "\.\./zero-elo", version = )"[^"]*"|\1"{{ version }}"|' \
+      crates/zero-elo-cli/Cargo.toml
+    # the docs.rs root, which nothing would complain about
+    sed -i.bak -E 's|(html_root_url = "https://docs\.rs/zero-elo/)[^"]*"|\1{{ version }}"|' \
+      crates/zero-elo/src/lib.rs
+    rm -f Cargo.toml.bak crates/zero-elo-cli/Cargo.toml.bak crates/zero-elo/src/lib.rs.bak
+    cargo check --quiet --workspace
+    git --no-pager diff --stat
+    echo
+    echo "$old -> {{ version }}. Commit, then: just publish && just tag {{ version }}"
+
 # Checks the tag against the manifest first, so a mismatch fails here in a
 # second rather than on CI after five builds have run.
 [doc('Tag a version and push it, building the release binaries on CI')]
