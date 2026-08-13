@@ -282,6 +282,21 @@ that a draw ranks below a defeat. The integration tests check the only thing
 that really matters, which is the result — full games played out against an
 ordinary engine, which the saboteur is required to lose.
 
+## Development
+
+The common operations live in a
+[justfile](https://github.com/hansl/project-zero-elo/blob/main/justfile):
+
+```sh
+just             # list everything
+just check       # formatting, clippy, and the tests
+just selfplay    # watch it lose a game
+just analyse --depth 8 --model paranoid
+```
+
+The recipes that run the engine forward their arguments straight through, so
+anything the CLI accepts works unchanged.
+
 ## License
 
 Apache-2.0.
