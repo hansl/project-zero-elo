@@ -37,7 +37,7 @@
 //! zero_elo::uci::run(std::io::stdin().lock(), std::io::stdout()).unwrap();
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/zero-elo/0.1.0")]
+#![doc(html_root_url = "https://docs.rs/zero-elo/0.2.0")]
 
 pub mod eval;
 pub mod game;
